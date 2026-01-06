@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LSTM Commodity Price Predictor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #f5f0e8;
+            --bg-secondary: #ebe5db;
+            --bg-card: #ffffff;
+            --text-primary: #2d3436;
+            --text-secondary: #636e72;
+            --accent-green: #27ae60;
+            --accent-red: #c0392b;
+            --accent-gold: #c9a227;
+            --border-color: #d4cfc5;
+        }
+        
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .main-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--accent-gold);
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .card-header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 15px 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .card-body {
+            padding: 20px;
+        }
+        
+        .form-select, .btn-predict {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .form-select:focus {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.2);
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+        
+        .btn-predict {
+            background: var(--accent-green);
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #fff;
+        }
+        
+        .btn-predict:hover {
+            background: #219a52;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
+        }
+        
+        .btn-predict:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            background: var(--text-secondary);
+        }
+        
+        .prediction-result {
+            display: none;
+        }
+        
+        .prediction-result.show {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .direction-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        
+        .direction-badge.up {
+            background: rgba(39, 174, 96, 0.15);
+            color: var(--accent-green);
+            border: 2px solid var(--accent-green);
+        }
+        
+        .direction-badge.down {
+            background: rgba(192, 57, 43, 0.15);
+            color: var(--accent-red);
+            border: 2px solid var(--accent-red);
+        }
+        
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+            color: var(--accent-gold);
+        }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        .strength-meter {
+            height: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+        
+        .strength-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+        
+        .strength-fill.strong { background: var(--accent-green); }
+        .strength-fill.moderate { background: var(--accent-gold); }
+        .strength-fill.weak { background: var(--text-secondary); }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--accent-gold);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            display: none;
+            background: rgba(192, 57, 43, 0.1);
+            border: 1px solid var(--accent-red);
+            border-radius: 8px;
+            padding: 15px;
+            color: var(--accent-red);
+            margin-top: 20px;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .commodity-group {
+            margin-bottom: 15px;
+        }
+        
+        .commodity-group-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+            padding-left: 5px;
+        }
+        
+        .info-banner {
+            background: rgba(201, 162, 39, 0.1);
+            border: 1px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .info-banner i {
+            color: var(--accent-gold);
+            margin-right: 10px;
+        }
+        
+        .model-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+        
+        .model-status.loaded {
+            background: rgba(39, 174, 96, 0.15);
+            color: var(--accent-green);
+        }
+        
+        .model-status.not-loaded {
+            background: rgba(192, 57, 43, 0.15);
+            color: var(--accent-red);
+        }
+        
+        .category-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            height: 100%;
+        }
+        
+        .category-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-card);
+            border-radius: 8px;
+            color: var(--accent-gold);
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+        
+        .category-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .category-title {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+        
+        .category-desc {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+        }
+        
+        .analysis-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 12px;
+        }
+        
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .analysis-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+        }
+        
+        .analysis-icon {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-card);
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .analysis-icon.bullish { color: var(--accent-green); }
+        .analysis-icon.bearish { color: var(--accent-red); }
+        .analysis-icon.neutral { color: var(--text-secondary); }
+        
+        .analysis-direction {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .analysis-direction.bullish {
+            background: rgba(39, 174, 96, 0.15);
+            color: var(--accent-green);
+        }
+        
+        .analysis-direction.bearish {
+            background: rgba(192, 57, 43, 0.15);
+            color: var(--accent-red);
+        }
+        
+        .analysis-direction.neutral {
+            background: rgba(99, 110, 114, 0.15);
+            color: var(--text-secondary);
+        }
+        
+        .analysis-direction.supports {
+            border: 1px solid var(--accent-green);
+        }
+        
+        .analysis-direction.opposes {
+            border: 1px solid var(--accent-red);
+        }
+        
+        .contribution-bar {
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .contribution-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+        
+        .contribution-fill.bullish { background: var(--accent-green); }
+        .contribution-fill.bearish { background: var(--accent-red); }
+        .contribution-fill.neutral { background: var(--text-secondary); }
+        
+        .top-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        
+        .feature-tag {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-secondary);
+        }
+        
+        .contribution-pct {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .overall-summary {
+            background: var(--bg-card);
+            border: 2px solid var(--accent-gold);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        
+        .summary-title {
+            font-weight: 600;
+            color: var(--accent-gold);
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="header">
+            <h1><i class="fas fa-chart-line me-2"></i>LSTM Price Predictor</h1>
+            <p>Deep Learning Commodity Price Forecasting</p>
+            <div class="model-status" id="modelStatus">
+                <i class="fas fa-circle"></i>
+                <span>Checking model status...</span>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-cog me-2"></i>Select Commodity
+            </div>
+            <div class="card-body">
+                <div class="info-banner">
+                    <i class="fas fa-info-circle"></i>
+                    The LSTM model analyzes 60 days of historical data to predict price movement over the next 5 days.
+                </div>
+                
+                <div class="feature-categories mb-4">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <div class="category-card">
+                                <div class="category-icon"><i class="fas fa-chart-line"></i></div>
+                                <div class="category-info">
+                                    <div class="category-title">Technical Indicators</div>
+                                    <div class="category-desc">RSI, MACD, Stochastic, ADX, Bollinger Bands, Williams %R, CCI, ROC</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="category-card">
+                                <div class="category-icon"><i class="fas fa-landmark"></i></div>
+                                <div class="category-info">
+                                    <div class="category-title">Macro Indicators</div>
+                                    <div class="category-desc">Treasury Yields, VIX, Dollar Index, EUR/USD, USD/CNY</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="category-card">
+                                <div class="category-icon"><i class="fas fa-ship"></i></div>
+                                <div class="category-info">
+                                    <div class="category-title">Related Indicators</div>
+                                    <div class="category-desc">Shipping ETFs, Related Commodities (Oil, Gas, Metals)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <select class="form-select" id="commoditySelect">
+                            <optgroup label="Energy">
+                                <option value="CL=F" selected>Crude Oil (CL=F)</option>
+                                <option value="BZ=F">Brent Crude (BZ=F)</option>
+                                <option value="NG=F">Natural Gas (NG=F)</option>
+                                <option value="HO=F">Heating Oil (HO=F)</option>
+                                <option value="RB=F">Gasoline (RB=F)</option>
+                            </optgroup>
+                            <optgroup label="Metals">
+                                <option value="GC=F">Gold (GC=F)</option>
+                                <option value="SI=F">Silver (SI=F)</option>
+                                <option value="HG=F">Copper (HG=F)</option>
+                                <option value="PL=F">Platinum (PL=F)</option>
+                                <option value="PA=F">Palladium (PA=F)</option>
+                            </optgroup>
+                            <optgroup label="Agriculture">
+                                <option value="ZC=F">Corn (ZC=F)</option>
+                                <option value="ZS=F">Soybean (ZS=F)</option>
+                                <option value="ZW=F">Wheat (ZW=F)</option>
+                                <option value="KC=F">Coffee (KC=F)</option>
+                                <option value="CC=F">Cocoa (CC=F)</option>
+                                <option value="CT=F">Cotton (CT=F)</option>
+                                <option value="SB=F">Sugar (SB=F)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-predict w-100" id="predictBtn" onclick="makePrediction()">
+                            <i class="fas fa-brain me-2"></i>Predict
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analyzing market data with LSTM model...</p>
+            <p class="text-secondary">This may take a few seconds</p>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        
+        <div class="prediction-result" id="predictionResult">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-chart-bar me-2"></i>Prediction Result
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <h4 class="text-secondary mb-3" id="commodityName">Crude Oil</h4>
+                        <div class="direction-badge" id="directionBadge">
+                            <i class="fas fa-arrow-up"></i>
+                            <span id="directionText">UP</span>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3">
+                            <div class="stat-card">
+                                <div class="stat-value" id="currentPrice">$0.00</div>
+                                <div class="stat-label">Current Price</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card">
+                                <div class="stat-value" id="targetPrice">$0.00</div>
+                                <div class="stat-label">Target Price</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card">
+                                <div class="stat-value" id="predictedChange">0.00%</div>
+                                <div class="stat-label">Predicted Change</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card">
+                                <div class="stat-value" id="confidence">0%</div>
+                                <div class="stat-label">Confidence</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Signal Strength</span>
+                            <span id="strengthLabel" class="fw-bold">MODERATE</span>
+                        </div>
+                        <div class="strength-meter">
+                            <div class="strength-fill moderate" id="strengthFill" style="width: 50%"></div>
+                        </div>
+                        <div class="text-center mt-3">
+                            <small class="text-secondary">
+                                Prediction Horizon: <span id="horizon">5 days</span>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Category Analysis Section -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <i class="fas fa-microscope me-2"></i>What's Driving This Prediction?
+                </div>
+                <div class="card-body">
+                    <div id="categoryAnalysis">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Check model status on load
+        document.addEventListener('DOMContentLoaded', checkModelStatus);
+        
+        async function checkModelStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('modelStatus');
+                if (data.model_loaded) {
+                    statusEl.className = 'model-status loaded';
+                    statusEl.innerHTML = '<i class="fas fa-check-circle"></i><span>Model loaded - Ready to predict</span>';
+                } else {
+                    statusEl.className = 'model-status not-loaded';
+                    statusEl.innerHTML = '<i class="fas fa-exclamation-circle"></i><span>Model not trained - Run train.py first</span>';
+                    document.getElementById('predictBtn').disabled = true;
+                }
+            } catch (error) {
+                const statusEl = document.getElementById('modelStatus');
+                statusEl.className = 'model-status not-loaded';
+                statusEl.innerHTML = '<i class="fas fa-exclamation-circle"></i><span>Server not running</span>';
+            }
+        }
+        
+        async function makePrediction() {
+            const commodity = document.getElementById('commoditySelect').value;
+            const commodityText = document.getElementById('commoditySelect').selectedOptions[0].text;
+            
+            // Show loading
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('predictionResult').classList.remove('show');
+            document.getElementById('errorMessage').classList.remove('show');
+            document.getElementById('predictBtn').disabled = true;
+            
+            try {
+                const response = await fetch('/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ commodity })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Update UI
+                document.getElementById('commodityName').textContent = commodityText;
+                document.getElementById('currentPrice').textContent = `$${data.current_price.toFixed(2)}`;
+                document.getElementById('targetPrice').textContent = `$${data.target_price.toFixed(2)}`;
+                document.getElementById('predictedChange').textContent = `${data.predicted_change_pct >= 0 ? '+' : ''}${data.predicted_change_pct.toFixed(2)}%`;
+                document.getElementById('confidence').textContent = `${data.confidence.toFixed(1)}%`;
+                document.getElementById('horizon').textContent = data.prediction_horizon;
+                
+                // Direction badge
+                const dirBadge = document.getElementById('directionBadge');
+                const dirText = document.getElementById('directionText');
+                if (data.direction === 'UP') {
+                    dirBadge.className = 'direction-badge up';
+                    dirBadge.querySelector('i').className = 'fas fa-arrow-up';
+                    dirText.textContent = 'BULLISH';
+                } else {
+                    dirBadge.className = 'direction-badge down';
+                    dirBadge.querySelector('i').className = 'fas fa-arrow-down';
+                    dirText.textContent = 'BEARISH';
+                }
+                
+                // Strength
+                const strengthLabel = document.getElementById('strengthLabel');
+                const strengthFill = document.getElementById('strengthFill');
+                strengthLabel.textContent = data.strength;
+                strengthFill.style.width = `${data.strength_score}%`;
+                strengthFill.className = `strength-fill ${data.strength.toLowerCase()}`;
+                
+                // Render category analysis
+                if (data.category_analysis) {
+                    renderCategoryAnalysis(data.category_analysis, data.direction);
+                }
+                
+                // Show result
+                document.getElementById('predictionResult').classList.add('show');
+                
+            } catch (error) {
+                document.getElementById('errorMessage').textContent = error.message;
+                document.getElementById('errorMessage').classList.add('show');
+            } finally {
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('predictBtn').disabled = false;
+            }
+        }
+        
+        function renderCategoryAnalysis(categories, overallDirection) {
+            const container = document.getElementById('categoryAnalysis');
+            const isBullish = overallDirection === 'UP';
+            
+            // Order categories by contribution
+            const orderedCats = Object.entries(categories)
+                .filter(([key, cat]) => cat.contribution_pct > 0)
+                .sort((a, b) => b[1].contribution_pct - a[1].contribution_pct);
+            
+            let html = '';
+            let supportingCount = 0;
+            let opposingCount = 0;
+            
+            for (const [key, cat] of orderedCats) {
+                const dirIcon = cat.direction === 'bullish' ? 'arrow-up' : 
+                               cat.direction === 'bearish' ? 'arrow-down' : 'minus';
+                const dirLabel = cat.direction.charAt(0).toUpperCase() + cat.direction.slice(1);
+                const supportClass = cat.supports_prediction ? 'supports' : 'opposes';
+                
+                if (cat.supports_prediction && cat.direction !== 'neutral') {
+                    supportingCount++;
+                } else if (!cat.supports_prediction) {
+                    opposingCount++;
+                }
+                
+                const featuresHtml = cat.top_features
+                    .map(f => `<span class="feature-tag">${f.name}</span>`)
+                    .join('');
+                
+                html += `
+                    <div class="analysis-card">
+                        <div class="analysis-header">
+                            <div class="analysis-title">
+                                <div class="analysis-icon ${cat.direction}">
+                                    <i class="fas fa-${cat.icon}"></i>
+                                </div>
+                                <div>
+                                    <div>${cat.name}</div>
+                                    <div class="contribution-pct">${cat.contribution_pct}% influence</div>
+                                </div>
+                            </div>
+                            <div class="analysis-direction ${cat.direction} ${supportClass}">
+                                <i class="fas fa-${dirIcon}"></i>
+                                ${dirLabel}
+                            </div>
+                        </div>
+                        <div class="contribution-bar">
+                            <div class="contribution-fill ${cat.direction}" style="width: ${Math.min(cat.contribution_pct * 2, 100)}%"></div>
+                        </div>
+                        ${cat.top_features.length > 0 ? `
+                            <div class="top-features">
+                                <small class="text-secondary me-2">Key factors:</small>
+                                ${featuresHtml}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+            
+            // Overall summary
+            const totalCats = orderedCats.filter(([k, c]) => c.direction !== 'neutral').length;
+            const summaryText = isBullish 
+                ? `${supportingCount} of ${totalCats} indicator categories support the bullish outlook`
+                : `${supportingCount} of ${totalCats} indicator categories support the bearish outlook`;
+            
+            html += `
+                <div class="overall-summary">
+                    <div class="summary-title">
+                        <i class="fas fa-balance-scale me-2"></i>Overall Analysis
+                    </div>
+                    <div>${summaryText}</div>
+                    ${opposingCount > 0 ? `<small class="text-secondary">${opposingCount} category signals caution</small>` : ''}
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
