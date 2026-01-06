@@ -1,8 +1,3 @@
-"""
-Flask Web App for LSTM Commodity Price Predictor
-Provides a simple UI to make predictions
-"""
-
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import numpy as np
@@ -20,13 +15,11 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 app = Flask(__name__)
 CORS(app)
 
-# Global variables for model and config
 model = None
 scaler = None
 config = None
 background_data = None
 
-# Feature category mapping
 FEATURE_CATEGORIES = {
     'technical_indicators': {
         'name': 'Technical Indicators',
@@ -57,65 +50,50 @@ FEATURE_CATEGORIES = {
 
 
 def categorize_feature(feature_name, target_commodity):
-    """Determine which category a feature belongs to"""
-    # Check if it's the target commodity's OHLCV
     if feature_name.startswith(target_commodity):
         for kw in ['_Open', '_High', '_Low', '_Close', '_Volume']:
             if kw in feature_name:
                 return 'price_movement'
     
-    # Check technical indicators
     for kw in FEATURE_CATEGORIES['technical_indicators']['keywords']:
         if kw in feature_name:
             return 'technical_indicators'
     
-    # Check macro
     for kw in FEATURE_CATEGORIES['macro_indicators']['keywords']:
         if kw in feature_name:
             return 'macro_indicators'
     
-    # Check shipping
     for kw in FEATURE_CATEGORIES['shipping_trade']['keywords']:
         if kw in feature_name:
             return 'shipping_trade'
     
-    # Check related commodities (but not target)
     for kw in FEATURE_CATEGORIES['related_commodities']['keywords']:
         if kw in feature_name and not feature_name.startswith(target_commodity):
             return 'related_commodities'
     
-    return 'technical_indicators'  # Default
+    return 'technical_indicators'
 
 
 def calculate_feature_importance(X_input, feature_names, target_commodity):
-    """
-    Calculate feature importance using gradient-based attribution
-    Returns contribution by category
-    """
     global model
     
     import tensorflow as tf
     
-    # Use gradient-based feature importance (faster than SHAP for LSTMs)
     X_tensor = tf.convert_to_tensor(X_input, dtype=tf.float32)
     
     with tf.GradientTape() as tape:
         tape.watch(X_tensor)
         predictions = model(X_tensor, training=False)
-        direction_output = predictions[0]  # Direction probability
+        direction_output = predictions[0]
     
-    # Get gradients
     gradients = tape.gradient(direction_output, X_tensor)
     
-    # Average importance across time steps
-    feature_importance = np.abs(gradients.numpy()).mean(axis=1)[0]  # Shape: (n_features,)
+    feature_importance = np.abs(gradients.numpy()).mean(axis=1)[0]
     
-    # Normalize
     total = feature_importance.sum()
     if total > 0:
         feature_importance = feature_importance / total * 100
     
-    # Aggregate by category
     category_contributions = {}
     for cat_key in FEATURE_CATEGORIES:
         category_contributions[cat_key] = {
@@ -129,19 +107,18 @@ def calculate_feature_importance(X_input, feature_names, target_commodity):
         category = categorize_feature(feat_name, target_commodity)
         importance = float(feature_importance[i])
         category_contributions[category]['contribution'] += importance
-        if importance > 0.5:  # Only include significant features
+        if importance > 0.5:  
             category_contributions[category]['features'].append({
                 'name': feat_name,
                 'importance': round(importance, 2)
             })
     
-    # Sort features by importance within each category
     for cat_key in category_contributions:
         category_contributions[cat_key]['features'] = sorted(
             category_contributions[cat_key]['features'],
             key=lambda x: x['importance'],
             reverse=True
-        )[:5]  # Top 5 features per category
+        )[:5]
         category_contributions[cat_key]['contribution'] = round(
             category_contributions[cat_key]['contribution'], 1
         )
@@ -150,10 +127,6 @@ def calculate_feature_importance(X_input, feature_names, target_commodity):
 
 
 def calculate_directional_contribution(X_input, feature_names, target_commodity, direction_prob):
-    """
-    Calculate whether each category contributes bullishly or bearishly
-    Uses gradient-based attribution from the actual LSTM model
-    """
     global model
     import tensorflow as tf
     
@@ -171,46 +144,35 @@ def calculate_directional_contribution(X_input, feature_names, target_commodity,
             'top_features': []
         }
     
-    # Get feature indices by category
     category_indices = {cat: [] for cat in FEATURE_CATEGORIES}
     for i, feat_name in enumerate(feature_names):
         category = categorize_feature(feat_name, target_commodity)
         category_indices[category].append(i)
     
-    # Use gradient-based attribution
     X_tensor = tf.convert_to_tensor(X_input, dtype=tf.float32)
     
     with tf.GradientTape() as tape:
         tape.watch(X_tensor)
         predictions = model(X_tensor, training=False)
-        # Get direction output (probability of UP)
         direction_output = predictions[0][0, 0]
     
-    # Get gradients - shape will be same as input: (1, time_steps, n_features)
     grads = tape.gradient(direction_output, X_tensor)
     if grads is None:
-        # Fallback if gradients not available
         return category_analysis
     
-    grads_np = grads.numpy()  # Shape: (1, time_steps, n_features)
+    grads_np = grads.numpy()
     
-    # Feature importance = mean absolute gradient across time
-    feature_importance = np.abs(grads_np[0]).mean(axis=0)  # Shape: (n_features,)
+    feature_importance = np.abs(grads_np[0]).mean(axis=0)
     
-    # Feature contribution direction = sign of gradient * input value
-    # Positive = pushes prediction toward UP (bullish)
-    # Negative = pushes prediction toward DOWN (bearish)
-    input_values = X_input[0]  # Shape: (time_steps, n_features)
-    feature_direction = (grads_np[0] * input_values).mean(axis=0)  # Shape: (n_features,)
+    input_values = X_input[0]
+    feature_direction = (grads_np[0] * input_values).mean(axis=0)
     
-    # Normalize importance to percentages
     total_importance = feature_importance.sum()
     if total_importance > 0:
         feature_importance_pct = feature_importance / total_importance * 100
     else:
         feature_importance_pct = np.zeros(n_features)
     
-    # For each category, aggregate importance and direction
     for cat_key, indices in category_indices.items():
         if not indices:
             continue
@@ -223,17 +185,14 @@ def calculate_directional_contribution(X_input, feature_names, target_commodity,
             imp = float(feature_importance_pct[idx])
             dir_score = float(feature_direction[idx])
             cat_importance += imp
-            cat_direction_score += dir_score * imp  # Weight by importance
+            cat_direction_score += dir_score * imp
             
-            if imp > 0.5:  # Significant features only
+            if imp > 0.5:
                 feat_details.append({
                     'name': feature_names[idx].replace('target_', '').replace('_Close', ''),
                     'importance': round(imp, 1)
                 })
         
-        # Determine category direction based on weighted gradient direction
-        # Positive score = category pushes toward bullish
-        # Negative score = category pushes toward bearish
         if cat_direction_score > 0.001:
             cat_direction = 'bullish'
         elif cat_direction_score < -0.001:
@@ -241,7 +200,6 @@ def calculate_directional_contribution(X_input, feature_names, target_commodity,
         else:
             cat_direction = 'neutral'
         
-        # Does this category support the overall prediction?
         supports = (cat_direction == 'bullish' and is_bullish) or \
                    (cat_direction == 'bearish' and not is_bullish) or \
                    cat_direction == 'neutral'
@@ -250,7 +208,6 @@ def calculate_directional_contribution(X_input, feature_names, target_commodity,
         category_analysis[cat_key]['direction'] = cat_direction
         category_analysis[cat_key]['supports_prediction'] = supports
         
-        # Sort and get top features
         feat_details.sort(key=lambda x: x['importance'], reverse=True)
         category_analysis[cat_key]['top_features'] = feat_details[:3]
     
@@ -258,12 +215,10 @@ def calculate_directional_contribution(X_input, feature_names, target_commodity,
 
 
 def load_resources_for_commodity(symbol):
-    """Load model, scaler, and config for a specific commodity"""
     global model, scaler, config
     
     try:
         import tensorflow as tf
-        # Convert symbol to filename (CL=F -> CL_F)
         safe_symbol = symbol.replace('=', '_')
         
         model_path = f'models/{safe_symbol}_model.keras'
@@ -285,15 +240,13 @@ def load_resources_for_commodity(symbol):
 
 
 def load_resources():
-    """Load default model (Crude Oil)"""
     return load_resources_for_commodity('CL=F')
 
 
 def fetch_recent_data(symbol, days=100):
-    """Fetch recent data for prediction"""
     try:
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=days * 2)  # Extra buffer for indicators
+        start_date = end_date - timedelta(days=days * 2)
         
         ticker = yf.Ticker(symbol)
         df = ticker.history(start=start_date, end=end_date, interval='1d')
@@ -301,7 +254,6 @@ def fetch_recent_data(symbol, days=100):
         if df.empty:
             return None
         
-        # Normalize index to date only (remove timezone)
         df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
         df = df[~df.index.duplicated(keep='first')]
         
@@ -312,7 +264,6 @@ def fetch_recent_data(symbol, days=100):
 
 
 def calculate_indicators(df, prefix='target_'):
-    """Calculate technical indicators"""
     indicators = pd.DataFrame(index=df.index)
     
     close = df['Close']
@@ -320,13 +271,11 @@ def calculate_indicators(df, prefix='target_'):
     low = df['Low']
     volume = df['Volume']
     
-    # Moving Averages
     for period in [5, 10, 20, 50, 100, 200]:
         if len(close) >= period:
             indicators[f'{prefix}SMA_{period}'] = ta.trend.sma_indicator(close, window=period)
             indicators[f'{prefix}EMA_{period}'] = ta.trend.ema_indicator(close, window=period)
     
-    # Technical indicators
     indicators[f'{prefix}RSI_14'] = ta.momentum.rsi(close, window=14)
     
     macd = ta.trend.MACD(close)
@@ -369,30 +318,24 @@ def calculate_indicators(df, prefix='target_'):
 
 
 def prepare_prediction_data(commodity_symbol):
-    """Prepare data for making a prediction"""
     if config is None:
         return None, "Model not loaded"
     
     sequence_length = config['sequence_length']
     feature_names = config['feature_names']
     
-    # Fetch target commodity
     target_df = fetch_recent_data(commodity_symbol, days=sequence_length + 100)
     if target_df is None:
         return None, f"Could not fetch data for {commodity_symbol}"
     
-    # Create feature dataframe
     combined_df = pd.DataFrame(index=target_df.index)
     
-    # Add OHLCV
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         combined_df[f'{commodity_symbol}_{col}'] = target_df[col]
     
-    # Add technical indicators
     indicators = calculate_indicators(target_df, prefix='target_')
     combined_df = pd.concat([combined_df, indicators], axis=1)
     
-    # Fetch macro indicators
     macro_symbols = ['^TNX', '^TYX', '^FVX', '^VIX', 'DX-Y.NYB', 'EURUSD=X', 'CNY=X']
     for symbol in macro_symbols:
         try:
@@ -404,7 +347,6 @@ def prepare_prediction_data(commodity_symbol):
         except:
             pass
     
-    # Fetch shipping indicators
     shipping_symbols = ['BDRY', 'SBLK', 'GNK']
     for symbol in shipping_symbols:
         try:
@@ -416,7 +358,6 @@ def prepare_prediction_data(commodity_symbol):
         except:
             pass
     
-    # Fetch related commodities
     related = ['CL=F', 'GC=F', 'NG=F', 'SI=F', 'HG=F']
     for symbol in related:
         if symbol != commodity_symbol:
@@ -429,25 +370,20 @@ def prepare_prediction_data(commodity_symbol):
             except:
                 pass
     
-    # Fill missing values
     combined_df = combined_df.ffill().bfill()
     combined_df = combined_df.dropna()
     
-    # Ensure we have all required features
     missing_features = set(feature_names) - set(combined_df.columns)
     for feat in missing_features:
-        combined_df[feat] = 0  # Fill missing features with 0
+        combined_df[feat] = 0
     
-    # Select only the features used during training, in the same order
     combined_df = combined_df[feature_names]
     
-    # Get last sequence_length rows
     if len(combined_df) < sequence_length:
         return None, f"Not enough data points. Need {sequence_length}, got {len(combined_df)}"
     
     recent_data = combined_df.iloc[-sequence_length:].values
     
-    # Scale the data
     scaled_data = scaler.transform(recent_data)
     
     return scaled_data, None
@@ -460,36 +396,29 @@ def index():
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
-    """Make a prediction for a commodity"""
     global model, scaler, config
     
     data = request.json
     commodity = data.get('commodity', 'CL=F')
     
-    # Load the correct model for this commodity
     if not load_resources_for_commodity(commodity):
         return jsonify({'error': f'No model found for {commodity}. Please train first.'}), 500
     
     try:
-        # Prepare data
         sequence_data, error = prepare_prediction_data(commodity)
         if error:
             return jsonify({'error': error}), 400
         
-        # Reshape for prediction
         X = sequence_data.reshape(1, sequence_data.shape[0], sequence_data.shape[1])
         
-        # Make prediction
         direction_prob, magnitude = model.predict(X, verbose=0)
         
         direction_prob = float(direction_prob[0][0])
         magnitude = float(magnitude[0][0])
         
-        # Interpret results
         direction = 'UP' if direction_prob > 0.5 else 'DOWN'
         confidence = direction_prob * 100 if direction == 'UP' else (1 - direction_prob) * 100
         
-        # Determine strength
         abs_magnitude = abs(magnitude)
         if confidence > 70 and abs_magnitude > 3:
             strength = 'STRONG'
@@ -501,15 +430,12 @@ def predict():
             strength = 'WEAK'
             strength_score = min(50, confidence)
         
-        # Calculate category contributions using gradient analysis
         feature_names = config['feature_names']
         category_analysis = calculate_directional_contribution(X, feature_names, commodity, direction_prob)
         
-        # Get current price
         ticker = yf.Ticker(commodity)
         current_price = ticker.history(period='1d')['Close'].iloc[-1]
         
-        # Calculate target price
         target_price = current_price * (1 + magnitude / 100)
         
         return jsonify({
@@ -532,7 +458,6 @@ def predict():
 
 @app.route('/api/commodities')
 def get_commodities():
-    """Get list of available commodities"""
     commodities = {
         'Available': {
             'CL=F': 'Crude Oil',
@@ -545,7 +470,6 @@ def get_commodities():
 
 @app.route('/api/status')
 def status():
-    """Check if model is loaded"""
     return jsonify({
         'model_loaded': model is not None,
         'config': config if config else None

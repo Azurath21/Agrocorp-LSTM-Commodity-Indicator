@@ -9,9 +9,7 @@ venv/
 .venv/
 pip-log.txt
 
-# Models (large files - train locally)
-models/*.keras
-models/*.joblib
+# Models - only exclude training artifacts
 models/*.png
 models/*.h5
 

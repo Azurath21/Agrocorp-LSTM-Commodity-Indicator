@@ -1,8 +1,3 @@
-"""
-Training Script for LSTM Commodity Price Predictor
-Trains separate models for each commodity
-"""
-
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -20,7 +15,6 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
 from sklearn.model_selection import train_test_split
 
-# Available commodities
 COMMODITIES = {
     'CL=F': 'Crude Oil',
     'NG=F': 'Natural Gas',
@@ -29,7 +23,6 @@ COMMODITIES = {
 
 
 def create_model(seq_len, n_features, dropout=0.3, l2_reg=0.001):
-    """Create LSTM model"""
     inputs = Input(shape=(seq_len, n_features))
     
     x = Bidirectional(LSTM(128, return_sequences=True, kernel_regularizer=l2(l2_reg)))(inputs)
@@ -62,7 +55,6 @@ def create_model(seq_len, n_features, dropout=0.3, l2_reg=0.001):
 
 
 def evaluate_model(model, X_test, y_dir_test, y_pct_test):
-    """Evaluate model performance"""
     dir_probs, mag_preds = model.predict(X_test, verbose=0)
     dir_probs = dir_probs.flatten()
     dir_preds = (dir_probs > 0.5).astype(int)
@@ -78,14 +70,12 @@ def evaluate_model(model, X_test, y_dir_test, y_pct_test):
 
 
 def train_commodity(symbol, years=5, sequence_length=60, prediction_days=5, epochs=100):
-    """Train model for a specific commodity"""
     name = COMMODITIES.get(symbol, symbol)
     
     print("\n" + "="*60)
     print(f"TRAINING MODEL FOR: {name} ({symbol})")
     print("="*60)
     
-    # Fetch data
     print("\n[1/4] Fetching data...")
     df, feature_categories = fetch_all_data(symbol, years=years)
     
@@ -94,7 +84,6 @@ def train_commodity(symbol, years=5, sequence_length=60, prediction_days=5, epoc
     print(f"Data range: {date_start} to {date_end}")
     print(f"Data points: {len(df)}")
     
-    # Prepare LSTM data
     print("\n[2/4] Preparing sequences...")
     X, y_dir, y_pct, feature_names, scaler = prepare_lstm_data(
         df, target_commodity=symbol, 
@@ -102,7 +91,6 @@ def train_commodity(symbol, years=5, sequence_length=60, prediction_days=5, epoc
         prediction_days=prediction_days
     )
     
-    # Split data
     X_trainval, X_test, y_dir_trainval, y_dir_test, y_pct_trainval, y_pct_test = train_test_split(
         X, y_dir, y_pct, test_size=0.15, shuffle=False
     )
@@ -112,7 +100,6 @@ def train_commodity(symbol, years=5, sequence_length=60, prediction_days=5, epoc
     
     print(f"Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
     
-    # Create and train model
     print("\n[3/4] Training model...")
     model = create_model(X.shape[1], X.shape[2])
     print(f"Model parameters: {model.count_params():,}")
@@ -133,7 +120,6 @@ def train_commodity(symbol, years=5, sequence_length=60, prediction_days=5, epoc
     
     epochs_trained = len(history.history['loss'])
     
-    # Evaluate
     print("\n[4/4] Evaluating...")
     metrics = evaluate_model(model, X_test, y_dir_test, y_pct_test)
     
@@ -145,10 +131,8 @@ def train_commodity(symbol, years=5, sequence_length=60, prediction_days=5, epoc
     print(f"F1 Score: {metrics['f1_score']*100:.2f}%")
     print(f"MAE:      {metrics['mae']:.2f}%")
     
-    # Save model with proper labeling
     os.makedirs('models', exist_ok=True)
     
-    # Create clean filename from symbol (CL=F -> CL_F)
     safe_symbol = symbol.replace('=', '_')
     
     model_path = f'models/{safe_symbol}_model.keras'
@@ -189,13 +173,11 @@ def main():
     args = parser.parse_args()
     
     if args.commodity == 'all':
-        # Train all commodities
         results = {}
         for symbol in COMMODITIES:
             _, metrics = train_commodity(symbol, years=args.years, epochs=args.epochs)
             results[symbol] = metrics
         
-        # Summary
         print("\n" + "="*60)
         print("TRAINING SUMMARY")
         print("="*60)
